@@ -1,50 +1,24 @@
-use bip39::Mnemonic;
-use bitcoin::Address;
+use bip39::{Error, Mnemonic};
 use bitcoin::hashes::Hash;
+use bitcoin::Address;
 use rand::rngs::OsRng;
 use rand::{RngCore, TryRngCore};
 use std::path::PathBuf;
+use std::string::ToString;
 
 pub struct Wallet {
     name: String,
-    key_pair: KeyPair,
+    key_pair: StoredKeyPair,
 }
 
 impl Wallet {
-    fn new(name: String, key_pair: KeyPair) -> Wallet {
+    fn new(name: String, key_pair: StoredKeyPair) -> Wallet {
         Wallet { name, key_pair }
     }
 
-    //** Mnemonic::from_entropy() handles the checksum part which could look like below:
-    //
-    // let hash = sha256::Hash::hash(&entropy);
-    // let entropy_with_checksum = match entropy_type {
-    //     EntropyType::Bits128 => {
-    //         let checksum_4bits = hash[0] >> 4;
-    //         let mut result = entropy.to_vec();
-    //         let last_byte = (checksum_4bits << 4) | 0;
-    //         result.push(last_byte);
-    //         result
-    //     },
-    //     EntropyType::Bits256 => {
-    //         let checksum_8bits = hash[0];
-    //         let mut result = entropy.to_vec();
-    //         result.push(checksum_8bits);
-    //         result
-    //     },
-    // };
-    pub fn generate_recovery_code(entropy_type: &EntropyType) -> Option<String> {
+    pub fn generate_recovery_code(entropy_type: &EntropyType) -> Result<Mnemonic, Error> {
         let entropy = generate_entropy_bytes(&entropy_type);
-        let mnemonic = Mnemonic::from_entropy(&entropy);
-        Some(
-            mnemonic
-                .unwrap()
-                .words()
-                .map(|w| w.into())
-                .collect::<Vec<String>>()
-                .join(" ")
-                .to_string(),
-        )
+        Mnemonic::from_entropy(&entropy)
     }
 
     fn generate_address() -> Address {
@@ -82,16 +56,16 @@ fn generate_entropy_bytes(entropy: &EntropyType) -> Vec<u8> {
     }
 }
 
-struct KeyPair {
-    public: PrivateKey,
-    private: PublicKey,
+struct StoredKeyPair {
+    public: StoredPrivateKey,
+    private: StoredPublicKey,
 }
 
-struct PrivateKey {
+struct StoredPrivateKey {
     path: PathBuf,
 }
 
-struct PublicKey {
+struct StoredPublicKey {
     path: PathBuf,
 }
 
@@ -103,20 +77,23 @@ mod test {
     #[test]
     fn mnemonic_from_256bits_generation_roundtrip() {
         let generated_mnemonic = Wallet::generate_recovery_code(&EntropyType::Bits256);
-        assert!(generated_mnemonic.is_some());
+        assert!(generated_mnemonic.is_ok());
         let generated_mnemonic = generated_mnemonic.unwrap();
 
-        let parsed_mnemonic = Mnemonic::parse(&generated_mnemonic).unwrap().to_string();
+        let parsed_mnemonic = Mnemonic::parse(&generated_mnemonic.to_string()).unwrap();
         assert_eq!(generated_mnemonic, parsed_mnemonic);
     }
 
     #[test]
     fn mnemonic_from_128bits_generation_roundtrip() {
         let generated_mnemonic = Wallet::generate_recovery_code(&EntropyType::Bits128);
-        assert!(generated_mnemonic.is_some());
+        assert!(generated_mnemonic.is_ok());
         let generated_mnemonic = generated_mnemonic.unwrap();
 
-        let parsed_mnemonic = Mnemonic::parse(&generated_mnemonic).unwrap().to_string();
+        let parsed_mnemonic = Mnemonic::parse(&generated_mnemonic.to_string()).unwrap();
         assert_eq!(generated_mnemonic, parsed_mnemonic);
+
+        let seed = generated_mnemonic.to_seed("mnemonic");
+        assert_eq!(seed.len(), 64);
     }
 }

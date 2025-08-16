@@ -1,10 +1,6 @@
-use std::hash::Hash;
 use bitcoin_wallet::{EntropyType, Wallet};
+use std::hash::Hash;
 use std::io;
-use bitcoin::bip32::Xpriv;
-use bitcoin::key::Secp256k1;
-use bitcoin::NetworkKind;
-use bitcoin::secp256k1::PublicKey;
 
 fn main() {
     println!("WELCOME TO BITCOIN WALLET");
@@ -25,22 +21,24 @@ fn main() {
 
     let mnemonic = Wallet::generate_recovery_code(&entropy_type)
         .expect("Failed to generate recovery code");
-    println!("Your passphrase:");
+    println!("Your recovery word codes:");
     println!("=======================================");
     println!("{}", mnemonic);
     println!("=======================================");
     println!("Please save it if you ever need to restore your private key");
 
+    let sk = Wallet::generate_private_key(&mnemonic);
 
-    // todo:
-    // generate the seed
-    let seed = mnemonic.to_seed("mnemonic");
+    println!("Enter your encryption passphrase:");
+    let mut passphrase = String::new();
+    let _ = io::stdin().read_line(&mut passphrase);
 
-    // derive private key
-    let master_key = Xpriv::new_master(NetworkKind::Test, &seed).expect("Failed to generate master key");
+    let key = Wallet::encrypt_key(sk.unwrap(), &passphrase).expect("Failed to encrypt key");
+    println!("encrypted: {key}")
+
 
     // private key -> public key
-    let public_key = PublicKey::from_secret_key(&Secp256k1::default(), &master_key.private_key);
+    // let public_key = PublicKey::from_secret_key(&Secp256k1::default(), &master_key.private_key);
 
     // pubkey SHA-256 hash
     // pubkey hash RIPEMD-160 => 20 bytes

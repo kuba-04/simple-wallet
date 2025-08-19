@@ -1,3 +1,5 @@
+use std::fs;
+use std::io::{Error, ErrorKind};
 use bip38::{Encrypt, EncryptWif, Error as Bip38Error};
 use bip39::{Error as Bip39Error, Mnemonic};
 use bitcoin::bip32::Error as Bip32Error;
@@ -7,7 +9,7 @@ use bitcoin::secp256k1::SecretKey;
 use bitcoin::{NetworkKind, PrivateKey};
 use rand::rngs::OsRng;
 use rand::{RngCore, TryRngCore};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::string::ToString;
 
 pub struct Wallet {
@@ -40,8 +42,39 @@ impl Wallet {
         ar.encrypt(passphrase, true)
     }
 
-    fn store_key() {
-        todo!()
+
+    pub fn store_secret(encrypted_key: &str, overwrite: bool) -> Result<(), Box<dyn std::error::Error>> {
+        let key_storage = Self::get_or_create_app_dir("simple-wallet".to_string())?;
+        if key_storage.exists() && !overwrite {
+            return Err(Box::new(Error::new(ErrorKind::AlreadyExists, "Key already exists")));
+        }
+        let _ = Self::create_file(
+            key_storage,
+            "key",
+            SecretFile::new(encrypted_key)
+        );
+        Ok(())
+    }
+
+    fn get_or_create_app_dir<T: AsRef<Path>>(path: T) -> Result<PathBuf, Box<dyn std::error::Error>> {
+        let app_dir = dirs::data_local_dir()
+            .map(|pb| pb.join::<T>(path))
+            .ok_or("Could not determine local data directory")?;
+
+        // Create directory if it doesn't exist
+        fs::create_dir_all(app_dir.clone())?;
+
+        Ok(app_dir)
+    }
+
+    fn create_file(
+        app_dir: PathBuf,
+        file_name: &str,
+        content: SecretFile,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let file_path = app_dir.join(file_name.to_string());
+        fs::write(file_path, content.encrypted_key)?;
+        Ok(())
     }
 
     fn load() -> Wallet {
@@ -50,6 +83,16 @@ impl Wallet {
 
     fn generate_address() {
 
+    }
+}
+
+struct SecretFile {
+    encrypted_key: String,
+}
+
+impl SecretFile {
+    pub fn new(encrypted_key: &str) -> Self {
+        SecretFile { encrypted_key: encrypted_key.to_string() }
     }
 }
 

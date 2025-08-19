@@ -34,8 +34,15 @@ fn main() {
     let _ = io::stdin().read_line(&mut passphrase);
 
     let key = Wallet::encrypt_key(sk.unwrap(), &passphrase).expect("Failed to encrypt key");
-    println!("encrypted: {key}")
-
+    let store_result = Wallet::store_secret(&key.as_str(), false);
+    if store_result.is_err() {
+        println!("Wallet already exists. Do you want to overwrite the key? y/n");
+        let mut decision = String::new();
+        let _ = io::stdin().read_line(&mut decision);
+        if decision.to_lowercase().trim() == "y" {
+            Wallet::store_secret(&key.as_str(), true).expect("Failed to store private key");
+        }
+    }
 
     // private key -> public key
     // let public_key = PublicKey::from_secret_key(&Secp256k1::default(), &master_key.private_key);

@@ -1,25 +1,27 @@
-use std::fs;
-use std::io::{Error, ErrorKind};
-use bip38::{Encrypt, EncryptWif, Error as Bip38Error};
+use bip38::{Decrypt, Encrypt, EncryptWif, Error as Bip38Error};
 use bip39::{Error as Bip39Error, Mnemonic};
 use bitcoin::bip32::Error as Bip32Error;
 use bitcoin::bip32::Xpriv;
 use bitcoin::hashes::Hash;
-use bitcoin::secp256k1::SecretKey;
+use bitcoin::key::Secp256k1;
+use bitcoin::secp256k1::{PublicKey, SecretKey};
 use bitcoin::{NetworkKind, PrivateKey};
 use rand::rngs::OsRng;
 use rand::{RngCore, TryRngCore};
+use std::fs;
+use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::string::ToString;
+use bitcoin::hex::DisplayHex;
 
 pub struct Wallet {
     name: String,
-    key_pair: StoredKeyPair,
+    xpriv: Xpriv,
 }
 
 impl Wallet {
-    fn new(name: String, key_pair: StoredKeyPair) -> Wallet {
-        Wallet { name, key_pair }
+    fn new(name: String, xpriv: Xpriv) -> Wallet {
+        Wallet { name, xpriv }
     }
 
     pub fn generate_recovery_code(entropy_type: &EntropyType) -> Result<Mnemonic, Bip39Error> {
@@ -43,14 +45,14 @@ impl Wallet {
     }
 
 
-    pub fn store_secret(encrypted_key: &str, overwrite: bool) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn store_secret(name: &str, encrypted_key: &str, overwrite: bool) -> Result<(), Box<dyn std::error::Error>> {
         let key_storage = Self::get_or_create_app_dir("simple-wallet".to_string())?;
-        if key_storage.exists() && !overwrite {
+        if key_storage.join(name.to_string()).exists() && !overwrite {
             return Err(Box::new(Error::new(ErrorKind::AlreadyExists, "Key already exists")));
         }
         let _ = Self::create_file(
             key_storage,
-            "key",
+            name,
             SecretFile::new(encrypted_key)
         );
         Ok(())
@@ -61,8 +63,9 @@ impl Wallet {
             .map(|pb| pb.join::<T>(path))
             .ok_or("Could not determine local data directory")?;
 
-        // Create directory if it doesn't exist
-        fs::create_dir_all(app_dir.clone())?;
+        if !app_dir.exists() {
+            fs::create_dir_all(app_dir.clone())?;
+        }
 
         Ok(app_dir)
     }
@@ -72,16 +75,51 @@ impl Wallet {
         file_name: &str,
         content: SecretFile,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let file_path = app_dir.join(file_name.to_string());
+        let file_path = app_dir.join(file_name.trim().to_string());
         fs::write(file_path, content.encrypted_key)?;
         Ok(())
     }
 
-    fn load() -> Wallet {
-        todo!()
+    pub fn list_wallets() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        let key_storage = Self::get_or_create_app_dir("simple-wallet".to_string())
+            .map_err(|e| Error::new(ErrorKind::Other, "Failed to read the storage"))?;
+        Ok(key_storage
+            .read_dir()
+            .map_err(|e| Error::new(ErrorKind::Other, e.to_string()))?
+            .map(|entry| entry.unwrap().file_name().to_str().unwrap().to_string())
+            .collect::<Vec<String>>())
     }
 
-    fn generate_address() {
+    pub fn load(name: &str, passphrase: &str) -> Result<Wallet, Error> {
+        let key_storage = Self::get_or_create_app_dir("simple-wallet".to_string())
+            .map_err(|e| Error::new(ErrorKind::InvalidFilename, "Failed to read the storage"))?
+            .join(name.to_string());
+        if !key_storage.exists() {
+            return Err(Error::new(ErrorKind::NotFound, "No such wallet created"));
+        }
+
+        let read_key = fs::read(key_storage)?;
+
+        let decrypted = String::try_from(read_key).unwrap().decrypt(passphrase).unwrap();
+        // todo: WrongExtendedKeyLength(32)
+        let xpriv_decoded = Xpriv::decode(decrypted.0.as_slice()).unwrap();
+
+        Ok(Wallet::new(name.to_string(), xpriv_decoded))
+    }
+
+    // private key -> public key
+    // pubkey SHA-256 hash
+    // pubkey hash RIPEMD-160 => 20 bytes
+    // segwit address:
+    // The P2WPKH address is represented in Bech32 encoding and requires the witness version and the public key hash.
+    // The witness version for P2WPKH is 0, followed directly by the 20-byte hash
+    // Encode this data into a Bech32 address
+    // converting the witness program into a base32 string
+    pub fn generate_address(&self) -> PublicKey {
+        let pubkey = self.xpriv.private_key.public_key(&Secp256k1::default());
+
+        pubkey
+
 
     }
 }
@@ -133,8 +171,8 @@ struct StoredPublicKey {
 
 #[cfg(test)]
 mod test {
-    use bip38::Decrypt;
     use crate::{EntropyType, Wallet};
+    use bip38::Decrypt;
     use bip39::Mnemonic;
     use bitcoin::secp256k1::SecretKey;
 

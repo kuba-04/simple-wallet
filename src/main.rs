@@ -3,7 +3,40 @@ use std::hash::Hash;
 use std::io;
 
 fn main() {
-    println!("WELCOME TO BITCOIN WALLET");
+    println!("=====================");
+    println!("SIMPLE BITCOIN WALLET");
+    println!("=====================");
+
+    let mut wallet_name = String::from("wallet");
+
+    println!("[l] -> to load existing wallet");
+    println!("[n] -> to create new wallet");
+    let mut start_option = String::new();
+    let _ = io::stdin().read_line(&mut start_option);
+    if start_option.trim() == "n" {
+        wallet_name = generate_new().expect("Failed to generate new wallet");
+    } else if start_option.trim() == "l" {
+        println!("Your wallets:");
+        let wallets= Wallet::list_wallets().expect("Error listing wallets");
+        println!("{}", wallets.join("\n").trim());
+        println!("Type wallet name:");
+        let mut new_wallet_name = String::new();
+        let _ = io::stdin().read_line(&mut new_wallet_name);
+        wallet_name = new_wallet_name.trim().to_string();
+    } else {
+        eprintln!("no such option");
+    }
+
+    println!("Enter the passphrase:");
+    let mut passphrase = String::new();
+    let _ = io::stdin().read_line(&mut passphrase);
+    let wallet = Wallet::load(wallet_name.as_str(), &passphrase).expect("Error loading wallet");
+    let pubkey = wallet.generate_address();
+
+    println!("Your address: {}", pubkey.to_string());
+}
+
+fn generate_new() -> Option<String> {
     println!("Step 1: Generate passphrase");
     println!("Choose between: 128 / 256 bits");
     println!("(s) 128 bits");
@@ -33,26 +66,22 @@ fn main() {
     let mut passphrase = String::new();
     let _ = io::stdin().read_line(&mut passphrase);
 
+    println!("Enter your wallet name:");
+    let mut wallet_name = String::new();
+    let _ = io::stdin().read_line(&mut wallet_name);
+
     let key = Wallet::encrypt_key(sk.unwrap(), &passphrase).expect("Failed to encrypt key");
-    let store_result = Wallet::store_secret(&key.as_str(), false);
+    let store_result = Wallet::store_secret(&wallet_name, &key.as_str(), false);
     if store_result.is_err() {
         println!("Wallet already exists. Do you want to overwrite the key? y/n");
         let mut decision = String::new();
         let _ = io::stdin().read_line(&mut decision);
         if decision.to_lowercase().trim() == "y" {
-            Wallet::store_secret(&key.as_str(), true).expect("Failed to store private key");
-        }
-    }
-
-    // private key -> public key
-    // let public_key = PublicKey::from_secret_key(&Secp256k1::default(), &master_key.private_key);
-
-    // pubkey SHA-256 hash
-    // pubkey hash RIPEMD-160 => 20 bytes
-    // segwit address:
-    // The P2WPKH address is represented in Bech32 encoding and requires the witness version and the public key hash.
-    // The witness version for P2WPKH is 0, followed directly by the 20-byte hash
-    // Encode this data into a Bech32 address
-    // converting the witness program into a base32 string
-
+            let result = Wallet::store_secret(&wallet_name, &key.as_str(), true);
+            if result.is_ok() {
+                println!("Successfully stored the key");
+                return Some(wallet_name);
+            } else { None }
+        } else { None }
+    } else { Some(wallet_name) }
 }

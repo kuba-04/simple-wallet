@@ -3,25 +3,26 @@ use bip39::{Error as Bip39Error, Mnemonic};
 use bitcoin::bip32::Error as Bip32Error;
 use bitcoin::bip32::Xpriv;
 use bitcoin::hashes::Hash;
+use bitcoin::hex::DisplayHex;
 use bitcoin::key::Secp256k1;
-use bitcoin::secp256k1::{PublicKey, SecretKey};
-use bitcoin::{NetworkKind, PrivateKey};
+use bitcoin::secp256k1::SecretKey;
+use bitcoin::{Address, CompressedPublicKey, Network, NetworkKind, PrivateKey};
 use rand::rngs::OsRng;
 use rand::{RngCore, TryRngCore};
 use std::fs;
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::string::ToString;
-use bitcoin::hex::DisplayHex;
 
 pub struct Wallet {
     name: String,
-    xpriv: Xpriv,
+    secret_key: SecretKey,
 }
 
 impl Wallet {
-    fn new(name: String, xpriv: Xpriv) -> Wallet {
-        Wallet { name, xpriv }
+    fn new(name: String, secret_key: SecretKey) -> Wallet {
+        Wallet { name, secret_key }
     }
 
     pub fn generate_recovery_code(entropy_type: &EntropyType) -> Result<Mnemonic, Bip39Error> {
@@ -42,6 +43,11 @@ impl Wallet {
         let wif = private_key.to_bytes();
         let ar: [u8; 32] = wif.try_into().unwrap();
         ar.encrypt(passphrase, true)
+    }
+
+    fn decrypt_key(encrypted_key: &str, passphrase: &str) -> Result<SecretKey, Bip38Error> {
+        let decrypted = encrypted_key.decrypt(passphrase)?.0;
+        SecretKey::from_slice(&decrypted).map_err(|_| Bip38Error::PrvKey)
     }
 
 
@@ -90,37 +96,24 @@ impl Wallet {
             .collect::<Vec<String>>())
     }
 
-    pub fn load(name: &str, passphrase: &str) -> Result<Wallet, Error> {
+    pub fn load(name: &str, passphrase: &str) -> Result<Wallet, Bip38Error> {
         let key_storage = Self::get_or_create_app_dir("simple-wallet".to_string())
-            .map_err(|e| Error::new(ErrorKind::InvalidFilename, "Failed to read the storage"))?
+            .map_err(|e| Bip38Error::PrvKey)?
             .join(name.to_string());
         if !key_storage.exists() {
-            return Err(Error::new(ErrorKind::NotFound, "No such wallet created"));
+            return Err(Bip38Error::PrvKey);
         }
 
-        let read_key = fs::read(key_storage)?;
+        let read_key = fs::read_to_string(key_storage).map_err(|_| Bip38Error::PrvKey)?;
+        let sk = Self::decrypt_key(read_key.as_str(), passphrase).map_err(|e| Bip38Error::PrvKey)?;
 
-        let decrypted = String::try_from(read_key).unwrap().decrypt(passphrase).unwrap();
-        // todo: WrongExtendedKeyLength(32)
-        let xpriv_decoded = Xpriv::decode(decrypted.0.as_slice()).unwrap();
-
-        Ok(Wallet::new(name.to_string(), xpriv_decoded))
+        Ok(Wallet::new(name.to_string(), sk))
     }
 
-    // private key -> public key
-    // pubkey SHA-256 hash
-    // pubkey hash RIPEMD-160 => 20 bytes
-    // segwit address:
-    // The P2WPKH address is represented in Bech32 encoding and requires the witness version and the public key hash.
-    // The witness version for P2WPKH is 0, followed directly by the 20-byte hash
-    // Encode this data into a Bech32 address
-    // converting the witness program into a base32 string
-    pub fn generate_address(&self) -> PublicKey {
-        let pubkey = self.xpriv.private_key.public_key(&Secp256k1::default());
-
-        pubkey
-
-
+    pub fn generate_address(&self) -> Address {
+        let private_key = PrivateKey::new(self.secret_key.clone(), NetworkKind::Test);
+        let c_pubkey = CompressedPublicKey::from_private_key(&Secp256k1::default(), &private_key).unwrap();
+        Address::p2wpkh(&c_pubkey, Network::Regtest)
     }
 }
 

@@ -9,8 +9,8 @@ fn main() {
 
     let mut wallet_name = String::from("wallet");
 
-    println!("[l] -> to load existing wallet");
-    println!("[n] -> to create new wallet");
+    println!("[l] -> load existing wallet");
+    println!("[n] -> create new wallet");
     let mut start_option = String::new();
     let _ = io::stdin().read_line(&mut start_option);
     if start_option.trim() == "n" {
@@ -18,11 +18,19 @@ fn main() {
     } else if start_option.trim() == "l" {
         println!("Your wallets:");
         let wallets= Wallet::list_wallets().expect("Error listing wallets");
-        println!("{}", wallets.join("\n").trim());
+        wallets.iter().for_each(|w| println!("-> {}", w));
+        println!();
         println!("Type wallet name:");
-        let mut new_wallet_name = String::new();
-        let _ = io::stdin().read_line(&mut new_wallet_name);
-        wallet_name = new_wallet_name.trim().to_string();
+        loop {
+            let mut new_wallet_name = String::new();
+            let _ = io::stdin().read_line(&mut new_wallet_name);
+            if !wallets.contains(&new_wallet_name.trim().to_string()) {
+                println!("unmatched..");
+                continue;
+            }
+            wallet_name = new_wallet_name.trim().to_string();
+            break;
+        }
     } else {
         eprintln!("no such option");
     }
@@ -31,9 +39,9 @@ fn main() {
     let mut passphrase = String::new();
     let _ = io::stdin().read_line(&mut passphrase);
     let wallet = Wallet::load(wallet_name.as_str(), &passphrase).expect("Error loading wallet");
-    let pubkey = wallet.generate_address();
+    let address = wallet.generate_address();
 
-    println!("Your address: {}", pubkey.to_string());
+    println!("Your bitcoin address: {:?}", address);
 }
 
 fn generate_new() -> Option<String> {
@@ -80,7 +88,7 @@ fn generate_new() -> Option<String> {
             let result = Wallet::store_secret(&wallet_name, &key.as_str(), true);
             if result.is_ok() {
                 println!("Successfully stored the key");
-                return Some(wallet_name);
+                Some(wallet_name)
             } else { None }
         } else { None }
     } else { Some(wallet_name) }

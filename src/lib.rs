@@ -2,25 +2,25 @@ use bip38::{Decrypt, Encrypt, Error as Bip38Error};
 use bip39::{Error as Bip39Error, Mnemonic};
 use bitcoin::bip32::Error as Bip32Error;
 use bitcoin::bip32::Xpriv;
-use bitcoin::hashes::Hash;
 use bitcoin::key::Secp256k1;
 use bitcoin::secp256k1::SecretKey;
 use bitcoin::{Address, CompressedPublicKey, Network, NetworkKind, PrivateKey};
-use rand::TryRngCore;
 use rand::rngs::OsRng;
+use rand::TryRngCore;
 use std::fs;
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::string::ToString;
 
+const STORE_DIR: String = "simple-wallet".to_string();
+
 pub struct Wallet {
-    name: String,
     secret_key: SecretKey,
 }
 
 impl Wallet {
-    fn new(name: String, secret_key: SecretKey) -> Wallet {
-        Wallet { name, secret_key }
+    fn new(secret_key: SecretKey) -> Wallet {
+        Wallet { secret_key }
     }
 
     pub fn generate_recovery_code(entropy_type: &EntropyType) -> Result<Mnemonic, Bip39Error> {
@@ -53,7 +53,7 @@ impl Wallet {
         encrypted_key: &str,
         overwrite: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let key_storage = Self::get_or_create_app_dir("simple-wallet".to_string())?;
+        let key_storage = Self::get_or_create_app_dir(STORE_DIR)?;
         if key_storage.join(name.to_string()).exists() && !overwrite {
             return Err(Box::new(Error::new(
                 ErrorKind::AlreadyExists,
@@ -89,8 +89,8 @@ impl Wallet {
     }
 
     pub fn list_wallets() -> Result<Vec<String>, Box<dyn std::error::Error>> {
-        let key_storage = Self::get_or_create_app_dir("simple-wallet".to_string())
-            .map_err(|e| Error::new(ErrorKind::Other, "Failed to read the storage"))?;
+        let key_storage = Self::get_or_create_app_dir(STORE_DIR)
+            .map_err(|_| Error::new(ErrorKind::Other, "Failed to read the storage"))?;
         Ok(key_storage
             .read_dir()
             .map_err(|e| Error::new(ErrorKind::Other, e.to_string()))?
@@ -99,8 +99,8 @@ impl Wallet {
     }
 
     pub fn load(name: &str, passphrase: &str) -> Result<Wallet, Bip38Error> {
-        let key_storage = Self::get_or_create_app_dir("simple-wallet".to_string())
-            .map_err(|e| Bip38Error::PrvKey)?
+        let key_storage = Self::get_or_create_app_dir(STORE_DIR)
+            .map_err(|_| Bip38Error::PrvKey)?
             .join(name.to_string());
         if !key_storage.exists() {
             return Err(Bip38Error::PrvKey);
@@ -108,8 +108,8 @@ impl Wallet {
 
         let read_key = fs::read_to_string(key_storage).map_err(|_| Bip38Error::PrvKey)?;
         let sk =
-            Self::decrypt_key(read_key.as_str(), passphrase).map_err(|e| Bip38Error::PrvKey)?;
-        Ok(Wallet::new(name.to_string(), sk))
+            Self::decrypt_key(read_key.as_str(), passphrase).map_err(|_| Bip38Error::PrvKey)?;
+        Ok(Wallet::new(sk))
     }
 
     pub fn generate_address(&self) -> Address {
@@ -152,19 +152,6 @@ fn generate_entropy_bytes(entropy: &EntropyType) -> Vec<u8> {
             e.to_vec()
         }
     }
-}
-
-struct StoredKeyPair {
-    public: StoredPrivateKey,
-    private: StoredPublicKey,
-}
-
-struct StoredPrivateKey {
-    path: PathBuf,
-}
-
-struct StoredPublicKey {
-    path: PathBuf,
 }
 
 #[cfg(test)]

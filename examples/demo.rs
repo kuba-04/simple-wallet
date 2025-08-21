@@ -15,9 +15,11 @@ fn main() {
     let _ = io::stdin().read_line(&mut start_option);
     if start_option.trim() == "n" {
         wallet_name = generate_new().expect("Failed to generate new wallet");
+        println!("Created new wallet: {}", wallet_name);
+        println!("Now loading it up")
     } else if start_option.trim() == "l" {
         println!("Your wallets:");
-        let wallets= Wallet::list_wallets().expect("Error listing wallets");
+        let wallets = Wallet::list_wallets().expect("Error listing wallets");
         wallets.iter().for_each(|w| println!("-> {}", w));
         println!();
         println!("Type wallet name:");
@@ -57,11 +59,11 @@ fn generate_new() -> Option<String> {
         _ => {
             println!("Defaulting to 256 bits");
             EntropyType::Bits256
-        },
+        }
     };
 
-    let mnemonic = Wallet::generate_recovery_code(&entropy_type)
-        .expect("Failed to generate recovery code");
+    let mnemonic =
+        Wallet::generate_recovery_code(&entropy_type).expect("Failed to generate recovery code");
     println!("Your recovery word codes:");
     println!("=======================================");
     println!("{}", mnemonic);
@@ -78,7 +80,9 @@ fn generate_new() -> Option<String> {
     let mut wallet_name = String::new();
     let _ = io::stdin().read_line(&mut wallet_name);
 
+    println!("Encrypting...");
     let key = Wallet::encrypt_key(sk.unwrap(), &passphrase).expect("Failed to encrypt key");
+    println!("Saving...");
     let store_result = Wallet::store_secret(&wallet_name, &key.as_str(), false);
     if store_result.is_err() {
         println!("Wallet already exists. Do you want to overwrite the key? y/n");
@@ -88,8 +92,15 @@ fn generate_new() -> Option<String> {
             let result = Wallet::store_secret(&wallet_name, &key.as_str(), true);
             if result.is_ok() {
                 println!("Successfully stored the key");
-                Some(wallet_name)
-            } else { None }
-        } else { None }
-    } else { Some(wallet_name) }
+                Some(wallet_name.trim().to_string())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        println!("Done!");
+        Some(wallet_name.trim().to_string())
+    }
 }

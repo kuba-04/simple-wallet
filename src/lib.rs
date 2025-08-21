@@ -1,18 +1,16 @@
-use bip38::{Decrypt, Encrypt, EncryptWif, Error as Bip38Error};
+use bip38::{Decrypt, Encrypt, Error as Bip38Error};
 use bip39::{Error as Bip39Error, Mnemonic};
 use bitcoin::bip32::Error as Bip32Error;
 use bitcoin::bip32::Xpriv;
 use bitcoin::hashes::Hash;
-use bitcoin::hex::DisplayHex;
 use bitcoin::key::Secp256k1;
 use bitcoin::secp256k1::SecretKey;
 use bitcoin::{Address, CompressedPublicKey, Network, NetworkKind, PrivateKey};
+use rand::TryRngCore;
 use rand::rngs::OsRng;
-use rand::{RngCore, TryRngCore};
 use std::fs;
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::string::ToString;
 
 pub struct Wallet {
@@ -26,7 +24,7 @@ impl Wallet {
     }
 
     pub fn generate_recovery_code(entropy_type: &EntropyType) -> Result<Mnemonic, Bip39Error> {
-        let entropy = generate_entropy_bytes(&entropy_type);
+        let entropy = generate_entropy_bytes(entropy_type);
         Mnemonic::from_entropy(&entropy)
     }
 
@@ -50,21 +48,25 @@ impl Wallet {
         SecretKey::from_slice(&decrypted).map_err(|_| Bip38Error::PrvKey)
     }
 
-
-    pub fn store_secret(name: &str, encrypted_key: &str, overwrite: bool) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn store_secret(
+        name: &str,
+        encrypted_key: &str,
+        overwrite: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let key_storage = Self::get_or_create_app_dir("simple-wallet".to_string())?;
         if key_storage.join(name.to_string()).exists() && !overwrite {
-            return Err(Box::new(Error::new(ErrorKind::AlreadyExists, "Key already exists")));
+            return Err(Box::new(Error::new(
+                ErrorKind::AlreadyExists,
+                "Key already exists",
+            )));
         }
-        let _ = Self::create_file(
-            key_storage,
-            name,
-            SecretFile::new(encrypted_key)
-        );
+        let _ = Self::create_file(key_storage, name, SecretFile::new(encrypted_key));
         Ok(())
     }
 
-    fn get_or_create_app_dir<T: AsRef<Path>>(path: T) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    fn get_or_create_app_dir<T: AsRef<Path>>(
+        path: T,
+    ) -> Result<PathBuf, Box<dyn std::error::Error>> {
         let app_dir = dirs::data_local_dir()
             .map(|pb| pb.join::<T>(path))
             .ok_or("Could not determine local data directory")?;
@@ -105,14 +107,15 @@ impl Wallet {
         }
 
         let read_key = fs::read_to_string(key_storage).map_err(|_| Bip38Error::PrvKey)?;
-        let sk = Self::decrypt_key(read_key.as_str(), passphrase).map_err(|e| Bip38Error::PrvKey)?;
-
+        let sk =
+            Self::decrypt_key(read_key.as_str(), passphrase).map_err(|e| Bip38Error::PrvKey)?;
         Ok(Wallet::new(name.to_string(), sk))
     }
 
     pub fn generate_address(&self) -> Address {
-        let private_key = PrivateKey::new(self.secret_key.clone(), NetworkKind::Test);
-        let c_pubkey = CompressedPublicKey::from_private_key(&Secp256k1::default(), &private_key).unwrap();
+        let private_key = PrivateKey::new(self.secret_key, NetworkKind::Test);
+        let c_pubkey =
+            CompressedPublicKey::from_private_key(&Secp256k1::default(), &private_key).unwrap();
         Address::p2wpkh(&c_pubkey, Network::Regtest)
     }
 }
@@ -123,7 +126,9 @@ struct SecretFile {
 
 impl SecretFile {
     pub fn new(encrypted_key: &str) -> Self {
-        SecretFile { encrypted_key: encrypted_key.to_string() }
+        SecretFile {
+            encrypted_key: encrypted_key.to_string(),
+        }
     }
 }
 
@@ -194,7 +199,9 @@ mod test {
 
     #[test]
     fn generate_private_key_from_mnemonic() {
-        let mnemonic = Mnemonic::parse("village curious time execute enjoy pudding play matter artwork lizard cloth judge");
+        let mnemonic = Mnemonic::parse(
+            "village curious time execute enjoy pudding play matter artwork lizard cloth judge",
+        );
 
         let sk = Wallet::generate_private_key(&mnemonic.unwrap());
         assert!(sk.is_ok());
@@ -202,11 +209,14 @@ mod test {
 
     // #[test] ignore takes too long
     fn encrypt_key() {
-        let key_bytes = [236, 188, 3, 80, 126, 92, 93, 121, 99, 137, 97, 61, 116, 25, 26, 61, 85, 78, 246, 21, 173, 231, 225, 164, 155, 129, 184, 229, 67, 37, 73, 61];
+        let key_bytes = [
+            236, 188, 3, 80, 126, 92, 93, 121, 99, 137, 97, 61, 116, 25, 26, 61, 85, 78, 246, 21,
+            173, 231, 225, 164, 155, 129, 184, 229, 67, 37, 73, 61,
+        ];
         let sk = SecretKey::from_slice(&key_bytes);
         let passphrase = "passphrase";
 
-        let encrypted  = Wallet::encrypt_key(sk.unwrap(), passphrase);
+        let encrypted = Wallet::encrypt_key(sk.unwrap(), passphrase);
         assert!(encrypted.is_ok());
 
         let encrypted = encrypted.unwrap();

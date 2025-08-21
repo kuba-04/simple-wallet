@@ -1,6 +1,7 @@
-use bitcoin_wallet::{EntropyType, Wallet};
-use std::hash::Hash;
+use bitcoin_wallet::{EntropyType};
 use std::io;
+use std::process::exit;
+use bitcoin_wallet::wallet::{Wallet};
 
 fn main() {
     println!("=====================");
@@ -19,8 +20,8 @@ fn main() {
         println!("Now loading it up")
     } else if start_option.trim() == "l" {
         println!("Your wallets:");
-        let wallets = Wallet::list_wallets().expect("Error listing wallets");
-        wallets.iter().for_each(|w| println!("-> {}", w));
+        let wallets = Wallet::list_wallets().expect("Should list wallets");
+        let _ = &wallets.iter().for_each(|w| println!("-> {w}"));
         println!();
         println!("Type wallet name:");
         loop {
@@ -70,18 +71,24 @@ fn generate_new() -> Option<String> {
     println!("=======================================");
     println!("Please save it if you ever need to restore your private key");
 
-    let sk = Wallet::generate_private_key(&mnemonic);
+    println!("Enter your wallet name:");
+    let mut wallet_name = String::new();
+    let _ = io::stdin().read_line(&mut wallet_name);
 
     println!("Enter your encryption passphrase:");
     let mut passphrase = String::new();
     let _ = io::stdin().read_line(&mut passphrase);
 
-    println!("Enter your wallet name:");
-    let mut wallet_name = String::new();
-    let _ = io::stdin().read_line(&mut wallet_name);
-
     println!("Encrypting...");
-    let key = Wallet::encrypt_key(sk.unwrap(), &passphrase).expect("Failed to encrypt key");
+    let key = Wallet::generate_and_encrypt_private_key(&mnemonic, &passphrase);
+    let key = match key {
+        Ok(x) => x,
+        Err(_) => {
+            println!("Failed to generate private key. Exiting...");
+            exit(1);
+        },
+    };
+
     println!("Saving...");
     let store_result = Wallet::store_secret(&wallet_name, &key.as_str(), false);
     if store_result.is_err() {
